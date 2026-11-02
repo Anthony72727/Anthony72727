@@ -1,0 +1,33 @@
+name: Refresh profile cards
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['data/**', 'scripts/**']
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/generate.mjs
+        env:
+          # A token with read:user also counts private contributions; the default one sees public activity only.
+          GITHUB_TOKEN: ${{ secrets.STATS_TOKEN || github.token }}
+      - name: Commit changes
+        run: |
+          git add assets
+          git diff --cached --quiet && exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Refresh profile cards'
+          git push

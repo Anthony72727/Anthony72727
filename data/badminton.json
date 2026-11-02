@@ -1,0 +1,9 @@
+{
+  "sample": false,
+  "source": "FFBaD",
+  "disciplines": [
+    { "name": "Singles", "rank": "R6", "court": "singles" },
+    { "name": "Doubles", "rank": "R6", "court": "doubles" },
+    { "name": "Mixed", "rank": "D8", "court": "doubles" }
+  ]
+}
