@@ -44,7 +44,7 @@ Badminton is my favourite way to switch off. It rewards the same things as good 
 
 ## GitHub stats
 
-<picture><source media="(max-width: 640px)" srcset="assets/stats-mobile.svg"><img width="100%" src="assets/stats.svg" alt="GitHub activity over the last 12 months: contributions, active days, pull requests, issues and commits by repository language"></picture>
+<picture><source media="(max-width: 640px)" srcset="assets/stats-mobile.svg"><img width="100%" src="assets/stats.svg" alt="GitHub activity over the last 12 months: contributions, active days, pull requests, issues and commits by language touched"></picture>
 
 ## Contact
 

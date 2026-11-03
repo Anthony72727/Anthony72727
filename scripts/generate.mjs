@@ -171,12 +171,39 @@ for (const [file, tag, value] of [['contact-linkedin', 'LINKEDIN', 'anthony-rich
 }
 
 // Activity
+const LANGUAGES = { ts: 'TypeScript', tsx: 'TypeScript', mts: 'TypeScript', js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript', cs: 'C#', kt: 'Kotlin', kts: 'Kotlin', java: 'Java', php: 'PHP', py: 'Python', vue: 'Vue', sql: 'SQL', html: 'HTML', css: 'CSS', scss: 'CSS' };
+const IGNORED_PATH = /(^|\/)(node_modules|dist|build|vendor)\//;
+const languageOf = (file) => (IGNORED_PATH.test(file) ? undefined : LANGUAGES[file.split('.').pop().toLowerCase()]);
+async function rest(path) {
+  const res = await fetch(`https://api.github.com/${path}`, { headers: { Authorization: `bearer ${process.env.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'User-Agent': LOGIN } });
+  if (!res.ok) throw new Error(`GitHub API error ${res.status} on ${path}`);
+  return res.json();
+}
+// A commit counts once for each language it touches. Merge commits are skipped: they carry no code of their own.
+async function commitsByLanguage(repositories) {
+  const since = new Date(Date.now() - 365 * 864e5).toISOString();
+  const langs = {};
+  for (const name of repositories) {
+    for (let page = 1; ; page++) {
+      const commits = await rest(`repos/${name}/commits?author=${LOGIN}&since=${since}&per_page=100&page=${page}`);
+      for (const commit of commits) {
+        if (commit.parents.length > 1) continue;
+        const { files = [] } = await rest(`repos/${name}/commits/${commit.sha}`);
+        for (const l of new Set(files.map((file) => languageOf(file.filename)).filter(Boolean))) langs[l] = (langs[l] ?? 0) + 1;
+      }
+      if (commits.length < 100) break;
+    }
+  }
+  return langs;
+}
 async function fetchActivity() {
-  const query = 'query($login:String!){user(login:$login){contributionsCollection{totalPullRequestContributions totalIssueContributions contributionCalendar{totalContributions weeks{contributionDays{date contributionCount}}} commitContributionsByRepository(maxRepositories:50){contributions{totalCount} repository{primaryLanguage{name}}}}}}';
+  const query = 'query($login:String!){user(login:$login){contributionsCollection{totalPullRequestContributions totalIssueContributions contributionCalendar{totalContributions weeks{contributionDays{date contributionCount}}} commitContributionsByRepository(maxRepositories:50){contributions{totalCount} repository{nameWithOwner}}}}}';
   const res = await fetch('https://api.github.com/graphql', { method: 'POST', headers: { Authorization: `bearer ${process.env.GITHUB_TOKEN}`, 'Content-Type': 'application/json', 'User-Agent': LOGIN }, body: JSON.stringify({ query, variables: { login: LOGIN } }) });
   const json = await res.json();
   if (!res.ok || json.errors) throw new Error(`GitHub API error ${res.status}: ${JSON.stringify(json.errors ?? json.message)}`);
-  return json.data.user.contributionsCollection;
+  const data = json.data.user.contributionsCollection;
+  data.langs = await commitsByLanguage(data.commitContributionsByRepository.map((r) => r.repository.nameWithOwner));
+  return data;
 }
 function activity(data) {
   const cal = data.contributionCalendar;
@@ -184,14 +211,9 @@ function activity(data) {
   const counts = weeks.flat().map((d) => d.contributionCount).filter(Boolean).sort((a, b) => a - b);
   const q = [0.25, 0.5, 0.75].map((p) => counts[Math.floor(counts.length * p)] ?? 1);
   const level = (c) => (!c ? 0 : c <= q[0] ? 1 : c <= q[1] ? 2 : c <= q[2] ? 3 : 4);
-  const langs = {};
-  for (const r of data.commitContributionsByRepository) {
-    const l = r.repository.primaryLanguage?.name;
-    if (l) langs[l] = (langs[l] ?? 0) + r.contributions.totalCount;
-  }
-  const top = Object.entries(langs).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const top = Object.entries(data.langs).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const stats = [[cal.totalContributions, 'CONTRIBUTIONS'], [counts.length, 'ACTIVE DAYS'], [data.totalPullRequestContributions, 'PULL REQUESTS'], [data.totalIssueContributions, 'ISSUES']];
-  const title = `GitHub activity over the last 12 months: ${stats.map(([v, l]) => `${v} ${l.toLowerCase()}`).join(', ')}. Commits by repository language: ${top.map(([l, v]) => `${l} ${v}`).join(', ')}.`;
+  const title = `GitHub activity over the last 12 months: ${stats.map(([v, l]) => `${v} ${l.toLowerCase()}`).join(', ')}. Commits by language touched: ${top.map(([l, v]) => `${l} ${v}`).join(', ')}.`;
 
   const heat = (shown, x, y, cell, gap) => {
     let out = '', lastMonth = null, lastLabel = -9;
@@ -225,14 +247,14 @@ function activity(data) {
     ${stats.map((s, i) => tile(s, 32 + i * 208, 100)).join('')}
     ${heat(weeks, 32, 170, 12, 3)}
     ${legend(32, 286, 12)}
-    ${label('COMMITS BY REPOSITORY LANGUAGE', 32, 334, { size: 11 })}
+    ${label('COMMITS BY LANGUAGE TOUCHED', 32, 334, { size: 11 })}
     ${bars(32, 348, 110, 620)}`));
   save('stats-mobile', svg(440, 430 + bh + 8, title, `
     ${label('ACTIVITY · LAST 12 MONTHS', 28, 42, { fill: C.green })}
     ${stats.map((s, i) => tile(s, 28 + (i % 2) * 192, 94 + Math.floor(i / 2) * 76)).join('')}
     ${heat(weeks.slice(-24), 28, 234, 13, 3)}
     ${legend(28, 360, 12)}
-    ${label('COMMITS BY REPOSITORY LANGUAGE', 28, 408, { size: 11 })}
+    ${label('COMMITS BY LANGUAGE TOUCHED', 28, 408, { size: 11 })}
     ${bars(28, 422, 92, 240)}`));
 }
 if (process.env.GITHUB_TOKEN) activity(await fetchActivity());
